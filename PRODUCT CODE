@@ -1,0 +1,154 @@
+#include <Servo.h>
+
+// Pin Definitions
+#define TRIG_PIN 7        // HC-SR04 Trigger pin
+#define ECHO_PIN 6        // HC-SR04 Echo pin  
+#define SERVO_PIN 9       // Servo motor signal pin
+#define LED_PIN 13        // Built-in LED or external LED
+
+// Configuration Constants
+#define DETECTION_DISTANCE 30  // Detection range in cm (adjust as needed)
+#define OPEN_ANGLE 90         // Servo angle when lid is open (0-180)
+#define CLOSE_ANGLE 0         // Servo angle when lid is closed
+#define OPEN_DURATION 5000    // How long lid stays open (milliseconds)
+#define SERVO_DELAY 15        // Delay between servo steps for smooth movement
+
+// Variables
+Servo lidServo;
+long duration;
+int distance;
+bool lidOpen = false;
+unsigned long lidOpenTime = 0;
+int currentAngle = CLOSE_ANGLE;
+
+void setup() {
+  // Initialize serial communication
+  Serial.begin(9600);
+  
+  // Initialize pins
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  
+  // Attach servo
+  lidServo.attach(SERVO_PIN);
+  lidServo.write(CLOSE_ANGLE);
+  currentAngle = CLOSE_ANGLE;
+  
+  // Initial LED state
+  digitalWrite(LED_PIN, LOW);
+  
+  Serial.println("Smart Dustbin Initialized!");
+  Serial.println("Detection Range: " + String(DETECTION_DISTANCE) + " cm");
+  delay(1000);
+}
+
+void loop() {
+  // Measure distance using ultrasonic sensor
+  distance = measureDistance();
+  
+  // Print distance for debugging
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+  
+  // Check if object is within detection range
+  if (distance > 0 && distance <= DETECTION_DISTANCE) {
+    if (!lidOpen) {
+      openLid();
+    }
+    // Reset timer if object is still detected
+    lidOpenTime = millis();
+  }
+  
+  // Check if lid should be closed
+  if (lidOpen && (millis() - lidOpenTime >= OPEN_DURATION)) {
+    closeLid();
+  }
+  
+  delay(100); // Small delay for stability
+}
+
+int measureDistance() {
+  // Clear the trigger pin
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  
+  // Send 10 microsecond pulse to trigger pin
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  
+  // Read the echo pin and calculate distance
+  duration = pulseIn(ECHO_PIN, HIGH, 30000); // Timeout after 30ms
+  
+  // Calculate distance in cm (speed of sound = 343 m/s)
+  if (duration > 0) {
+    return duration * 0.034 / 2;
+  } else {
+    return -1; // Error reading
+  }
+}
+
+void openLid() {
+  Serial.println("Opening lid...");
+  digitalWrite(LED_PIN, HIGH); // Turn on LED indicator
+  
+  // Smooth servo movement from current position to open position
+  if (currentAngle < OPEN_ANGLE) {
+    for (int angle = currentAngle; angle <= OPEN_ANGLE; angle++) {
+      lidServo.write(angle);
+      currentAngle = angle;
+      delay(SERVO_DELAY);
+    }
+  }
+  
+  lidOpen = true;
+  lidOpenTime = millis();
+  Serial.println("Lid opened!");
+}
+
+void closeLid() {
+  Serial.println("Closing lid...");
+  
+  // Smooth servo movement from current position to close position
+  if (currentAngle > CLOSE_ANGLE) {
+    for (int angle = currentAngle; angle >= CLOSE_ANGLE; angle--) {
+      lidServo.write(angle);
+      currentAngle = angle;
+      delay(SERVO_DELAY);
+    }
+  }
+  
+  lidOpen = false;
+  digitalWrite(LED_PIN, LOW); // Turn off LED indicator
+  Serial.println("Lid closed!");
+}
+
+// Additional utility functions
+
+void testServo() {
+  // Function to test servo movement (call in setup for testing)
+  Serial.println("Testing servo movement...");
+  for (int i = 0; i < 3; i++) {
+    lidServo.write(OPEN_ANGLE);
+    delay(1000);
+    lidServo.write(CLOSE_ANGLE);
+    delay(1000);
+  }
+}
+
+void calibrateDistance() {
+  // Function to help calibrate detection distance
+  Serial.println("=== Distance Calibration Mode ===");
+  for (int i = 0; i < 50; i++) {
+    int dist = measureDistance();
+    Serial.print("Reading ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.print(dist);
+    Serial.println(" cm");
+    delay(200);
+  }
+  Serial.println("=== Calibration Complete ===");
+}
